@@ -35,10 +35,6 @@
             margin-bottom: 2rem;
         }
 
-        .auth-container {
-            margin-bottom: 2rem;
-        }
-
         .auth-form {
             display: flex;
             flex-direction: column;
@@ -62,7 +58,7 @@
             font-size: 1rem;
         }
 
-        .auth-btn {
+        .btn {
             background-color: #4CAF50;
             color: white;
             padding: 0.8rem;
@@ -73,7 +69,7 @@
             transition: background-color 0.3s ease;
         }
 
-        .auth-btn:hover {
+        .btn:hover {
             background-color: #45a049;
         }
 
@@ -103,35 +99,16 @@
             margin-bottom: 1rem;
         }
 
-        .upload-text {
-            color: #666;
-            margin-bottom: 1rem;
-        }
-
         .file-input {
             display: none;
         }
 
-        .upload-btn {
-            background-color: #4CAF50;
-            color: white;
-            padding: 0.8rem 1.5rem;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: background-color 0.3s ease;
-        }
-
-        .upload-btn:hover {
-            background-color: #45a049;
-        }
-
         .preview-container {
-            margin-top: 2rem;
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
             gap: 1rem;
+            margin-top: 2rem;
+            min-height: 200px;
         }
 
         .preview-item {
@@ -169,17 +146,9 @@
             color: #666;
         }
 
-        .success {
-            color: #4CAF50;
-        }
-
-        .error {
-            color: #f44336;
-        }
-
-        .hidden {
-            display: none;
-        }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .hidden { display: none; }
 
         .logout-btn {
             position: absolute;
@@ -197,14 +166,35 @@
         .logout-btn:hover {
             background-color: #d32f2f;
         }
+
+        #loadingIndicator {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Image Uploader</h1>
         
-        <div class="auth-container" id="authContainer">
-            <div class="auth-form" id="loginForm">
+        <div id="authContainer">
+            <div id="loginForm" class="auth-form">
                 <h2>Login</h2>
                 <div class="form-group">
                     <label for="loginEmail">Email</label>
@@ -214,17 +204,13 @@
                     <label for="loginPassword">Password</label>
                     <input type="password" id="loginPassword" required>
                 </div>
-                <button class="auth-btn" onclick="login()">Login</button>
+                <button class="btn" onclick="login()">Login</button>
                 <p class="status-message" id="loginStatus"></p>
                 <p>Don't have an account? <a href="#" onclick="showRegister()">Register</a></p>
             </div>
 
-            <div class="auth-form hidden" id="registerForm">
+            <div id="registerForm" class="auth-form hidden">
                 <h2>Register</h2>
-                <div class="form-group">
-                    <label for="registerUsername">Username</label>
-                    <input type="text" id="registerUsername" required>
-                </div>
                 <div class="form-group">
                     <label for="registerEmail">Email</label>
                     <input type="email" id="registerEmail" required>
@@ -233,35 +219,69 @@
                     <label for="registerPassword">Password</label>
                     <input type="password" id="registerPassword" required>
                 </div>
-                <button class="auth-btn" onclick="register()">Register</button>
+                <button class="btn" onclick="register()">Register</button>
                 <p class="status-message" id="registerStatus"></p>
                 <p>Already have an account? <a href="#" onclick="showLogin()">Login</a></p>
             </div>
         </div>
 
-        <div class="upload-container hidden" id="uploadContainer">
+        <div id="uploadContainer" class="hidden">
             <button class="logout-btn" onclick="logout()">Logout</button>
-            <div class="upload-area" id="uploadArea">
+            <div id="uploadArea" class="upload-area">
                 <div class="upload-icon">📁</div>
-                <p class="upload-text">Drag & Drop images here or click to select</p>
-                <input type="file" class="file-input" id="fileInput" accept="image/*" multiple>
-                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">Select Files</button>
+                <p>Drag & Drop images here or click to select</p>
+                <input type="file" id="fileInput" class="file-input" accept="image/*" multiple>
+                <button class="btn" onclick="document.getElementById('fileInput').click()">Select Files</button>
             </div>
-            <div class="preview-container" id="previewContainer"></div>
-            <p class="status-message" id="statusMessage"></p>
+            <div id="previewContainer" class="preview-container"></div>
+            <div id="loadingIndicator">
+                <div class="loading-spinner"></div>
+            </div>
+            <p id="statusMessage" class="status-message"></p>
         </div>
     </div>
 
     <script>
-        // Initialize users array in localStorage if it doesn't exist
+        // Constants
+        const IMAGES_PER_BATCH = 12;
+        const DB_NAME = 'ImageUploaderDB';
+        const DB_VERSION = 1;
+        let db = null;
+        let isLoading = false;
+        let allImagesLoaded = false;
+        let currentOffset = 0;
+
+        // Initialize localStorage for users
         if (!localStorage.getItem('users')) {
             localStorage.setItem('users', JSON.stringify([]));
         }
 
-        // Initialize images array in localStorage if it doesn't exist
-        if (!localStorage.getItem('images')) {
-            localStorage.setItem('images', JSON.stringify({}));
-        }
+        // Initialize IndexedDB
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+        request.onerror = function(event) {
+            console.error("Database error: " + event.target.error);
+            showStatus('Database error occurred', 'error');
+        };
+
+        request.onupgradeneeded = function(event) {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains('images')) {
+                const store = db.createObjectStore('images', { keyPath: 'id', autoIncrement: true });
+                store.createIndex('email', 'email', { unique: false });
+                store.createIndex('timestamp', 'timestamp', { unique: false });
+            }
+        };
+
+        request.onsuccess = function(event) {
+            db = event.target.result;
+            const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+            if (currentUser) {
+                authContainer.classList.add('hidden');
+                uploadContainer.classList.remove('hidden');
+                loadMoreImages();
+            }
+        };
 
         // DOM Elements
         const authContainer = document.getElementById('authContainer');
@@ -272,18 +292,168 @@
         const fileInput = document.getElementById('fileInput');
         const previewContainer = document.getElementById('previewContainer');
         const statusMessage = document.getElementById('statusMessage');
-        const loginStatus = document.getElementById('loginStatus');
-        const registerStatus = document.getElementById('registerStatus');
+        const loadingIndicator = document.getElementById('loadingIndicator');
 
-        // Check if user is already logged in
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        if (currentUser) {
-            authContainer.classList.add('hidden');
-            uploadContainer.classList.remove('hidden');
-            loadUserImages();
+        // Infinite scroll handling
+        window.addEventListener('scroll', () => {
+            if (isLoading || allImagesLoaded) return;
+
+            const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+            if (scrollTop + clientHeight >= scrollHeight - 100) {
+                loadMoreImages();
+            }
+        });
+
+        // Image Functions
+        async function loadMoreImages() {
+            if (isLoading || allImagesLoaded) return;
+            
+            isLoading = true;
+            loadingIndicator.style.display = 'block';
+
+            const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+            const transaction = db.transaction(['images'], 'readonly');
+            const store = transaction.objectStore('images');
+            const emailIndex = store.index('email');
+            
+            const request = emailIndex.getAll(currentUser.email);
+            
+            request.onsuccess = function() {
+                const allImages = request.result.sort((a, b) => b.timestamp - a.timestamp);
+                const batch = allImages.slice(currentOffset, currentOffset + IMAGES_PER_BATCH);
+                
+                if (batch.length < IMAGES_PER_BATCH) {
+                    allImagesLoaded = true;
+                }
+
+                batch.forEach(image => createImagePreview(image.data, image.id));
+                currentOffset += batch.length;
+                
+                isLoading = false;
+                loadingIndicator.style.display = 'none';
+            };
+
+            request.onerror = function() {
+                showStatus('Error loading images', 'error');
+                isLoading = false;
+                loadingIndicator.style.display = 'none';
+            };
         }
 
-        // Show/Hide Forms
+        function createImagePreview(imageData, id) {
+            const div = document.createElement('div');
+            div.className = 'preview-item';
+            
+            const img = document.createElement('img');
+            img.src = imageData;
+            
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-btn';
+            deleteBtn.innerHTML = '×';
+            deleteBtn.onclick = () => deleteImage(id);
+            
+            div.appendChild(img);
+            div.appendChild(deleteBtn);
+            previewContainer.appendChild(div);
+        }
+
+        function addImage(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+                const transaction = db.transaction(['images'], 'readwrite');
+                const store = transaction.objectStore('images');
+                
+                const image = {
+                    email: currentUser.email,
+                    data: e.target.result,
+                    timestamp: Date.now()
+                };
+                
+                const request = store.add(image);
+                
+                request.onsuccess = function() {
+                    showStatus('Image uploaded successfully!', 'success');
+                    // Reset the container and reload all images
+                    previewContainer.innerHTML = '';
+                    currentOffset = 0;
+                    allImagesLoaded = false;
+                    loadMoreImages();
+                };
+                
+                request.onerror = function() {
+                    showStatus('Error uploading image', 'error');
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function deleteImage(id) {
+            if (!confirm('Are you sure you want to delete this image?')) return;
+            
+            const transaction = db.transaction(['images'], 'readwrite');
+            const store = transaction.objectStore('images');
+            const request = store.delete(id);
+            
+            request.onsuccess = function() {
+                showStatus('Image deleted successfully!', 'success');
+                // Reset the container and reload all images
+                previewContainer.innerHTML = '';
+                currentOffset = 0;
+                allImagesLoaded = false;
+                loadMoreImages();
+            };
+            
+            request.onerror = function() {
+                showStatus('Error deleting image', 'error');
+            };
+        }
+
+        // Authentication Functions
+        function login() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            const users = JSON.parse(localStorage.getItem('users'));
+            
+            const user = users.find(u => u.email === email && u.password === password);
+            if (user) {
+                localStorage.setItem('currentUser', JSON.stringify(user));
+                authContainer.classList.add('hidden');
+                uploadContainer.classList.remove('hidden');
+                currentOffset = 0;
+                allImagesLoaded = false;
+                loadMoreImages();
+            } else {
+                document.getElementById('loginStatus').textContent = 'Invalid email or password';
+            }
+        }
+
+        function register() {
+            const email = document.getElementById('registerEmail').value;
+            const password = document.getElementById('registerPassword').value;
+            const users = JSON.parse(localStorage.getItem('users'));
+            
+            if (users.some(u => u.email === email)) {
+                document.getElementById('registerStatus').textContent = 'Email already exists';
+                return;
+            }
+
+            users.push({ email, password });
+            localStorage.setItem('users', JSON.stringify(users));
+            document.getElementById('registerStatus').textContent = 'Registration successful! Please login.';
+            showLogin();
+        }
+
+        function logout() {
+            localStorage.removeItem('currentUser');
+            authContainer.classList.remove('hidden');
+            uploadContainer.classList.add('hidden');
+            previewContainer.innerHTML = '';
+            currentOffset = 0;
+            allImagesLoaded = false;
+        }
+
+        // UI Functions
         function showLogin() {
             loginForm.classList.remove('hidden');
             registerForm.classList.add('hidden');
@@ -294,120 +464,13 @@
             registerForm.classList.remove('hidden');
         }
 
-        // Authentication Functions
-        function login() {
-            const email = document.getElementById('loginEmail').value;
-            const password = document.getElementById('loginPassword').value;
-
-            const users = JSON.parse(localStorage.getItem('users'));
-            const user = users.find(u => u.email === email && u.password === password);
-
-            if (user) {
-                localStorage.setItem('currentUser', JSON.stringify(user));
-                authContainer.classList.add('hidden');
-                uploadContainer.classList.remove('hidden');
-                loadUserImages();
-                loginStatus.textContent = '';
-            } else {
-                loginStatus.textContent = 'Invalid email or password';
-                loginStatus.className = 'status-message error';
-            }
-        }
-
-        function register() {
-            const username = document.getElementById('registerUsername').value;
-            const email = document.getElementById('registerEmail').value;
-            const password = document.getElementById('registerPassword').value;
-
-            const users = JSON.parse(localStorage.getItem('users'));
-            
-            if (users.some(u => u.email === email)) {
-                registerStatus.textContent = 'Email already exists';
-                registerStatus.className = 'status-message error';
-                return;
-            }
-
-            const newUser = { username, email, password };
-            users.push(newUser);
-            localStorage.setItem('users', JSON.stringify(users));
-
-            registerStatus.textContent = 'Registration successful! Please login.';
-            registerStatus.className = 'status-message success';
-            showLogin();
-        }
-
-        function logout() {
-            localStorage.removeItem('currentUser');
-            authContainer.classList.remove('hidden');
-            uploadContainer.classList.add('hidden');
-            previewContainer.innerHTML = '';
-        }
-
-        // Image Upload Functions
-        function loadUserImages() {
-            const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-            const images = JSON.parse(localStorage.getItem('images'));
-            const userImages = images[currentUser.email] || [];
-
-            previewContainer.innerHTML = '';
-            userImages.forEach(imageData => {
-                createPreviewItem(imageData);
-            });
-        }
-
-        function createPreviewItem(imageData) {
-            const previewItem = document.createElement('div');
-            previewItem.className = 'preview-item';
-            
-            const img = document.createElement('img');
-            img.src = imageData;
-            
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'delete-btn';
-            deleteBtn.innerHTML = '×';
-            deleteBtn.onclick = function() {
-                if (confirm('Are you sure you want to delete this image?')) {
-                    deleteImage(imageData);
-                    previewItem.remove();
-                }
-            };
-            
-            previewItem.appendChild(img);
-            previewItem.appendChild(deleteBtn);
-            previewContainer.appendChild(previewItem);
-        }
-
-        function deleteImage(imageData) {
-            const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-            const images = JSON.parse(localStorage.getItem('images'));
-            
-            if (images[currentUser.email]) {
-                images[currentUser.email] = images[currentUser.email].filter(img => img !== imageData);
-                localStorage.setItem('images', JSON.stringify(images));
-                showStatus('Image deleted successfully', 'success');
-            }
-        }
-
-        function uploadImage(file) {
-            const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-            const images = JSON.parse(localStorage.getItem('images'));
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const imageData = e.target.result;
-                
-                if (!images[currentUser.email]) {
-                    images[currentUser.email] = [];
-                }
-                
-                images[currentUser.email].push(imageData);
-                localStorage.setItem('images', JSON.stringify(images));
-                
-                createPreviewItem(imageData);
-                showStatus('Image uploaded successfully!', 'success');
-            };
-            
-            reader.readAsDataURL(file);
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = `status-message ${type}`;
+            setTimeout(() => {
+                statusMessage.textContent = '';
+                statusMessage.className = 'status-message';
+            }, 3000);
         }
 
         // Event Listeners
@@ -450,20 +513,11 @@
             const files = [...e.target.files];
             files.forEach(file => {
                 if (file.type.startsWith('image/')) {
-                    uploadImage(file);
+                    addImage(file);
                 } else {
                     showStatus('Please upload only image files!', 'error');
                 }
             });
-        }
-
-        function showStatus(message, type) {
-            statusMessage.textContent = message;
-            statusMessage.className = `status-message ${type}`;
-            setTimeout(() => {
-                statusMessage.textContent = '';
-                statusMessage.className = 'status-message';
-            }, 3000);
         }
     </script>
 </body>
